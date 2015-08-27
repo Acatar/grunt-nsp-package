@@ -10,44 +10,99 @@ var googl = require('goo.gl');
 var table = require('text-table');
 var color = require('cli-color');
 var ansiTrim = require('cli-color/lib/trim');
+var chalk = require('chalk');
 
 var registry;
-var file = path.resolve(process.cwd(), 'package.json');
 var pkg;
 
 
 module.exports = function (grunt) {
+    var parents = {};
 
     grunt.registerTask('validate-package', 'Audits package.json against nodesecurity.io API', function () {
-        var done = this.async();
+        var done = this.async(),
+            config = grunt.config.get('nsp-package') || {},
+            files = config.files || [path.resolve(process.cwd(), 'package.json')],
+            failIsBoolean = typeof config.failOnVulnerabilities === 'boolean',
+            tasks = [],
+            outputTasks = [],
+            makeTask,
+            makeOutputTask,
+            i;
 
-        grunt.log.writeln(file);
+        if (!failIsBoolean && files.length === 1) {
+            config.failOnVulnerabilities = true;
+        } else if (!failIsBoolean) {
+            config.failOnVulnerabilities = false;
+        }
 
-        fs.exists(file, function (exists) {
-            if (!exists) {
-                grunt.warn('Can\'t load ' + file);
-                process.exit(0);
-            }
-            pkg = JSON.parse(fs.readFileSync(file));
-            npmconf.load(function (err, config) {
-                config.log = {
-                    verbose: function () {},
-                    info: function () {},
-                    http: function () {},
-                    silly: function () {},
-                    error: function () {},
-                    warn: function () {},
-                };
-                registry = new RegClient(config);
-                checkPackage(pkg, undefined, function (result) {
-                    prettyOutput(result, done);
+        makeTask = function (file) {
+            return function (callback) {
+                grunt.log.writeln(file);
+
+                fs.exists(file, function (exists) {
+                    if (!exists) {
+                        callback('Can\'t load ' + file);
+                    }
+                    pkg = JSON.parse(fs.readFileSync(file));
+                    npmconf.load(function (err, config) {
+                        if (err) callback(err);
+
+                        config.log = {
+                            verbose: function () {},
+                            info: function () {},
+                            http: function () {},
+                            silly: function () {},
+                            error: function () {},
+                            warn: function () {},
+                        };
+                        registry = new RegClient(config);
+                        checkPackage(pkg, undefined, function (result) {
+                            callback(null, result);
+                        });
+                    });
                 });
+            };
+        };
+
+        makeOutputTask = function (result, options) {
+            return function (callback) {
+                prettyOutput(result, options, callback);
+            };
+        };
+
+        for (i = 0; i < files.length; i += 1) {
+            tasks.push(makeTask(files[i]));
+        }
+
+        async.parallel(tasks, function (err, results) {
+            var i;
+
+            if (err) {
+                console.log(chalk.red(err));
+                return;
+            }
+
+            for (i = 0; i < results.length; i += 1) {
+                if (config.failOnVulnerabilities && i === (results.length -1)) {
+                    outputTasks.push(makeOutputTask(results[i], { fail: true }));
+                } else {
+                    outputTasks.push(makeOutputTask(results[i], { fail: false }));
+                }
+            }
+
+            async.series(outputTasks, function (err, results) {
+                if (err) {
+                    console.log(chalk.red(err));
+                    return;
+                }
+
+                done();
             });
         });
-
     });
 
-    var parents = {};
+    grunt.registerTask('validate-packages', ['validate-package']);
 
     function resolveParents(module, current) {
         current = current || [];
@@ -117,7 +172,7 @@ module.exports = function (grunt) {
             cb();
         });
     }
-    
+
     function addResultRow(h, module) {
         h.push([
             module.module,
@@ -127,7 +182,7 @@ module.exports = function (grunt) {
             module.advisory.short_url || 'See website'
         ]);
     }
-    
+
     function prettyOutputResults(result, h, callback) {
         var totalResults = result.length + 1;
         result.forEach(function (module) {
@@ -149,7 +204,8 @@ module.exports = function (grunt) {
         });
     }
 
-    function prettyOutput(result, done) {
+    function prettyOutput(result, options, done) {
+        options = options || { fail: true };
         if (result && result.length > 0) {
             // Pretty output
             var opts = {
@@ -168,8 +224,14 @@ module.exports = function (grunt) {
             ];
             prettyOutputResults(result, h, function () {
                 var t = table(h, opts);
-                grunt.log.warn(t);
-                grunt.fail.warn('known vulnerable modules found');
+                console.log(chalk.white(t));
+
+                if (options.fail) {
+                    grunt.fail.warn('known vulnerable modules found');
+                } else {
+                    console.log(chalk.red('known vulnerable modules found'));
+                }
+
                 done();
             });
         } else {
