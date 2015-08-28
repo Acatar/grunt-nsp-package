@@ -20,80 +20,43 @@ module.exports = function (grunt) {
     var parents = {};
 
     grunt.registerTask('validate-package', 'Audits package.json against nodesecurity.io API', function () {
-        var done = this.async(),
-            config = grunt.config.get('nsp-package') || {},
-            files = config.files || [path.resolve(process.cwd(), 'package.json')],
-            failIsBoolean = typeof config.failOnVulnerabilities === 'boolean',
-            tasks = [],
-            outputTasks = [],
-            makeTask,
-            makeOutputTask,
-            i;
+        var done = this.async();
+        var config;
+        var tasks = [];
+        var outputTasks = [];
+        var i;
 
-        if (!failIsBoolean && files.length === 1) {
-            config.failOnVulnerabilities = true;
-        } else if (!failIsBoolean) {
-            config.failOnVulnerabilities = false;
+        config = makeConfig(grunt.config.get('nsp-package'));
+
+        for (i = 0; i < config.files.length; i += 1) {
+            tasks.push(makeValidationTask(config.files[i]));
         }
-
-        makeTask = function (file) {
-            return function (callback) {
-                grunt.log.writeln(file);
-
-                fs.exists(file, function (exists) {
-                    if (!exists) {
-                        callback('Can\'t load ' + file);
-                    }
-                    pkg = JSON.parse(fs.readFileSync(file));
-                    npmconf.load(function (err, config) {
-                        if (err) callback(err);
-
-                        config.log = {
-                            verbose: function () {},
-                            info: function () {},
-                            http: function () {},
-                            silly: function () {},
-                            error: function () {},
-                            warn: function () {},
-                        };
-                        registry = new RegClient(config);
-                        checkPackage(pkg, undefined, function (result) {
-                            callback(null, result);
-                        });
-                    });
-                });
-            };
-        };
-
-        makeOutputTask = function (result, options) {
-            return function (callback) {
-                prettyOutput(result, options, callback);
-            };
-        };
-
-        for (i = 0; i < files.length; i += 1) {
-            tasks.push(makeTask(files[i]));
-        }
+        grunt.log.writeln('Checking package(s) for known vulnerabilities:');
 
         async.parallel(tasks, function (err, results) {
             var i;
 
             if (err) {
-                console.log(chalk.red(err));
+                if (config.failIfVulnerabilitiesFound) {
+                    grunt.fail.warn(err);
+                } else {
+                    grunt.log.writeln(chalk.red(err));
+                }
                 return;
             }
 
             for (i = 0; i < results.length; i += 1) {
-                if (config.failOnVulnerabilities && i === (results.length -1)) {
-                    outputTasks.push(makeOutputTask(results[i], { fail: true }));
-                } else {
-                    outputTasks.push(makeOutputTask(results[i], { fail: false }));
-                }
+                outputTasks.push(makeOutputTask(results[i].result, { file: results[i].file, fail: config.failIfVulnerabilitiesFound }));
             }
 
+            grunt.log.writeln('');
             async.series(outputTasks, function (err, results) {
                 if (err) {
-                    console.log(chalk.red(err));
+                    if (config.failIfVulnerabilitiesFound) {
+                        grunt.fail.warn(err);
+                    } else {
+                        grunt.log.writeln(chalk.red(err));
+                    }
                     return;
                 }
 
@@ -103,6 +66,71 @@ module.exports = function (grunt) {
     });
 
     grunt.registerTask('validate-packages', ['validate-package']);
+
+    function makeConfig(config) {
+        var failOptIsBoolean;
+
+        config = config || {};
+
+        // ensure that a config.files value exists and is an array
+        if (typeof config.file === 'string' && !Array.isArray(config.files)) {
+            config.files = [config.file];
+        } else if (typeof config.files === 'string') {
+            config.files = [config.files];
+        } else if (!Array.isArray(config.files)) {
+            config.files = [path.resolve(process.cwd(), 'package.json')];
+        }
+
+        // respect configuration override, but set the default "fail"
+        // behavior to true if the files array has only one file,
+        // otherwise set it to false
+        if (config.failBehavior === 'warn') {
+            config.failIfVulnerabilitiesFound = true;
+        } else if (config.failBehavior === 'log') {
+            config.failIfVulnerabilitiesFound = false;
+        } else if (config.files.length === 1) {
+            config.failIfVulnerabilitiesFound = true;
+        } else {
+            config.failIfVulnerabilitiesFound = false;
+        }
+
+        return config;
+    }
+
+    function makeValidationTask (file) {
+        return function (callback) {
+            grunt.log.writeln(file);
+
+            fs.exists(file, function (exists) {
+                if (!exists) {
+                    callback('Can\'t load ' + file);
+                }
+                pkg = JSON.parse(fs.readFileSync(file));
+                npmconf.load(function (err, config) {
+                    if (err) callback(err);
+
+                    config.log = {
+                        verbose: function () {},
+                        info: function () {},
+                        http: function () {},
+                        silly: function () {},
+                        error: function () {},
+                        warn: function () {},
+                    };
+                    registry = new RegClient(config);
+                    checkPackage(pkg, undefined, function (result) {
+                        callback(null, { file: file, result: result});
+                    });
+                });
+            });
+        };
+    }
+
+    function makeOutputTask(result, options) {
+        return function (callback) {
+            prettyOutput(result, options, callback);
+        };
+    }
 
     function resolveParents(module, current) {
         current = current || [];
@@ -206,6 +234,7 @@ module.exports = function (grunt) {
 
     function prettyOutput(result, options, done) {
         options = options || { fail: true };
+
         if (result && result.length > 0) {
             // Pretty output
             var opts = {
@@ -224,13 +253,15 @@ module.exports = function (grunt) {
             ];
             prettyOutputResults(result, h, function () {
                 var t = table(h, opts);
-                console.log(chalk.white(t));
+                grunt.log.writeln(chalk.blue('results for: ' + options.file));
+                grunt.log.writeln(chalk.white(t));
 
                 if (options.fail) {
                     grunt.fail.warn('known vulnerable modules found');
                 } else {
-                    console.log(chalk.red('known vulnerable modules found'));
+                    grunt.log.writeln(chalk.red('known vulnerable modules found'));
                 }
+                grunt.log.writeln('');
 
                 done();
             });
