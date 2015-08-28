@@ -21,15 +21,20 @@ module.exports = function (grunt) {
 
     grunt.registerTask('validate-package', 'Audits package.json against nodesecurity.io API', function () {
         var done = this.async();
-        var config;
+        var config = makeConfig(grunt.config.get('nsp-package'));
+
+        audit(config, done);
+    });
+
+    grunt.registerTask('validate-packages', ['validate-package']);
+
+    function audit(config, done) {
         var tasks = [];
         var outputTasks = [];
         var i;
 
-        config = makeConfig(grunt.config.get('nsp-package'));
-
         for (i = 0; i < config.files.length; i += 1) {
-            tasks.push(makeValidationTask(config.files[i]));
+            tasks.push(makeAuditTask(config.files[i]));
         }
         grunt.log.writeln('Checking package(s) for known vulnerabilities:');
 
@@ -49,23 +54,25 @@ module.exports = function (grunt) {
                 outputTasks.push(makeOutputTask(results[i].result, { file: results[i].file, fail: config.failIfVulnerabilitiesFound }));
             }
 
-            grunt.log.writeln('');
-            async.series(outputTasks, function (err, results) {
-                if (err) {
-                    if (config.failIfVulnerabilitiesFound) {
-                        grunt.fail.warn(err);
-                    } else {
-                        grunt.log.writeln(chalk.red(err));
-                    }
-                    return;
-                }
-
-                done();
-            });
+            printAuditOutput(outputTasks, config, done);
         });
-    });
+    }
 
-    grunt.registerTask('validate-packages', ['validate-package']);
+    function printAuditOutput(outputTasks, config, done) {
+        grunt.log.writeln('');
+        async.series(outputTasks, function (err, results) {
+            if (err) {
+                if (config.failIfVulnerabilitiesFound) {
+                    grunt.fail.warn(err);
+                } else {
+                    grunt.log.writeln(chalk.red(err));
+                }
+                return;
+            }
+
+            done();
+        });
+    }
 
     function makeConfig(config) {
         var failOptIsBoolean;
@@ -97,7 +104,7 @@ module.exports = function (grunt) {
         return config;
     }
 
-    function makeValidationTask (file) {
+    function makeAuditTask (file) {
         return function (callback) {
             grunt.log.writeln(file);
 
