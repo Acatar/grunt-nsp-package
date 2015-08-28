@@ -10,7 +10,6 @@ var googl = require('goo.gl');
 var table = require('text-table');
 var color = require('cli-color');
 var ansiTrim = require('cli-color/lib/trim');
-var chalk = require('chalk');
 
 var registry;
 var pkg;
@@ -18,10 +17,24 @@ var pkg;
 
 module.exports = function (grunt) {
     var parents = {};
+    var log;
+    var warn;
 
     grunt.registerTask('validate-package', 'Audits package.json against nodesecurity.io API', function () {
         var done = this.async();
         var config = makeConfig(grunt.config.get('nsp-package'));
+
+        log = function (message) {
+            grunt.log.writeln(message);
+        };
+
+        warn = function (message) {
+            if (config.failIfVulnerabilitiesFound) {
+                grunt.fail.warn(message);
+            } else {
+                log(color.red(message));
+            }
+        };
 
         audit(config, done);
     });
@@ -36,17 +49,13 @@ module.exports = function (grunt) {
         for (i = 0; i < config.files.length; i += 1) {
             tasks.push(makeAuditTask(config.files[i]));
         }
-        grunt.log.writeln('Checking package(s) for known vulnerabilities:');
+        log('Checking package(s) for known vulnerabilities:');
 
         async.parallel(tasks, function (err, results) {
             var i;
 
             if (err) {
-                if (config.failIfVulnerabilitiesFound) {
-                    grunt.fail.warn(err);
-                } else {
-                    grunt.log.writeln(chalk.red(err));
-                }
+                warn(err);
                 return;
             }
 
@@ -59,14 +68,10 @@ module.exports = function (grunt) {
     }
 
     function printAuditOutput(outputTasks, config, done) {
-        grunt.log.writeln('');
+        log('');
         async.series(outputTasks, function (err, results) {
             if (err) {
-                if (config.failIfVulnerabilitiesFound) {
-                    grunt.fail.warn(err);
-                } else {
-                    grunt.log.writeln(chalk.red(err));
-                }
+                warn(err);
                 return;
             }
 
@@ -106,7 +111,7 @@ module.exports = function (grunt) {
 
     function makeAuditTask (file) {
         return function (callback) {
-            grunt.log.writeln(file);
+            log(file);
 
             fs.exists(file, function (exists) {
                 if (!exists) {
@@ -240,7 +245,7 @@ module.exports = function (grunt) {
     }
 
     function prettyOutput(result, options, done) {
-        options = options || { fail: true };
+        options = options || {};
 
         if (result && result.length > 0) {
             // Pretty output
@@ -260,20 +265,15 @@ module.exports = function (grunt) {
             ];
             prettyOutputResults(result, h, function () {
                 var t = table(h, opts);
-                grunt.log.writeln(chalk.blue('results for: ' + options.file));
-                grunt.log.writeln(chalk.white(t));
-
-                if (options.fail) {
-                    grunt.fail.warn('known vulnerable modules found');
-                } else {
-                    grunt.log.writeln(chalk.red('known vulnerable modules found'));
-                }
-                grunt.log.writeln('');
+                log(color.blue('results for: ' + options.file));
+                log(color.white(t));
+                warn('known vulnerable modules found');
+                log('');
 
                 done();
             });
         } else {
-            grunt.log.writeln(color.green("No vulnerable modules found"));
+            log(color.green("No vulnerable modules found"));
             done();
         }
     }
