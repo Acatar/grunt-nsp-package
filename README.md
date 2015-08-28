@@ -13,7 +13,7 @@ Add this line to your project's grunt.js gruntfile:
 grunt.loadNpmTasks('grunt-nsp-package');
 ```
 
-Then use the task `validate-package` build tasks eg.
+Then use the task `validate-package` or `validate-packages`, build tasks eg.
 ```js
 grunt.registerTask("default", 'validate-package');
 ```
