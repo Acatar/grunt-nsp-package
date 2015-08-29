@@ -138,7 +138,7 @@ module.exports = function (grunt) {
             // Pretty output
             opts = {
                 align: ['l', 'c', 'c', 'l'],
-                stringLength: function(s) {
+                stringLength: function (s) {
                     return chalk.stripColor(s).length;
                 }
             };
@@ -151,7 +151,7 @@ module.exports = function (grunt) {
                 ]
             ];
 
-            result.forEach(function(module) {
+            result.forEach(function (module) {
                 headings.push([
                     module.module,
                     module.version,                   /* jscs:disable */
