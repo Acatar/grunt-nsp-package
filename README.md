@@ -46,7 +46,7 @@ This example configuration audits a single package
 This example configuration audits multiple packages
 ```json
 "nsp-audit": {
-    "file": ["../some/other/app/package.json", "../and/another/app/package.json"],
+    "files": ["../some/other/app/package.json", "../and/another/app/package.json"],
     "failBehavior": "log"
 }
 ```
