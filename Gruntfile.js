@@ -4,5 +4,5 @@ module.exports = function (grunt) {
 
     grunt.loadTasks('tasks');
 
-    grunt.registerTask('default', ['validate-package']);
+    grunt.registerTask('default', ['nsp-audit']);
 };

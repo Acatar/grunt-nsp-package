@@ -1,20 +1,14 @@
 {
   "name": "grunt-nsp-package",
   "description": "Grunt plugin for Node Security Project package.json validation",
-  "version": "0.0.6",
+  "version": "0.1.6",
   "author": "Adam Baldwin (https://nodesecurity.io)",
   "dependencies": {
-    "async": "~0.2.10",
-    "cli-color": "~0.2.3",
-    "colors": "~0.6.2",
-    "goo.gl": "~0.1.2",
-    "grunt": "~0.4.4",
-    "npm-registry-client": "~0.4.5",
-    "npmconf": "~0.1.13",
-    "qs": "~1.2.0",
-    "request": "~2.40.0",
-    "semver": "~2.2.1",
-    "text-table": "~0.2.0"
+    "async": "^1.4.2",
+    "chalk": "^1.1.1",
+    "grunt": "^0.4.5",
+    "nsp": "^1.1.0",
+    "text-table": "^0.2.0"
   },
   "devDependencies": {
     "precommit-hook": "~0.3.10"

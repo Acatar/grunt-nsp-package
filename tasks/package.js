@@ -1,85 +1,26 @@
-var fs = require('fs');
-var path = require('path');
-var request = require('request');
-var npmconf = require('npmconf');
-var RegClient = require('npm-registry-client');
-var semver = require('semver');
-var async = require('async');
-var googl = require('goo.gl');
-
-var table = require('text-table');
-var color = require('cli-color');
-var ansiTrim = require('cli-color/lib/trim');
-
-var registry;
-var pkg;
-
+var grunt = require('grunt'),
+    auditPackage = require('nsp/lib/auditPackage.js'),
+    path = require('path'),
+    async = require('async'),
+    chalk = require('chalk'),
+    table = require('text-table');
 
 module.exports = function (grunt) {
-    var parents = {};
-    var log;
-    var warn;
+    var makeConfig,
+        makeAuditTask,
+        makeOutputTask,
+        audit,
+        printAuditOutput,
+        prettyOutput,
+        log,
+        warn;
 
-    grunt.registerTask('validate-package', 'Audits package.json against nodesecurity.io API', function () {
-        var done = this.async();
-        var config = makeConfig(grunt.config.get('nsp-package'));
-
-        log = function (message) {
-            grunt.log.writeln(message);
-        };
-
-        warn = function (message) {
-            if (config.failIfVulnerabilitiesFound) {
-                grunt.fail.warn(message);
-            } else {
-                log(color.red(message));
-            }
-        };
-
-        audit(config, done);
-    });
-
-    grunt.registerTask('validate-packages', ['validate-package']);
-
-    function audit(config, done) {
-        var tasks = [];
-        var outputTasks = [];
-        var i;
-
-        for (i = 0; i < config.files.length; i += 1) {
-            tasks.push(makeAuditTask(config.files[i]));
-        }
-        log('Checking package(s) for known vulnerabilities:');
-
-        async.parallel(tasks, function (err, results) {
-            var i;
-
-            if (err) {
-                warn(err);
-                return;
-            }
-
-            for (i = 0; i < results.length; i += 1) {
-                outputTasks.push(makeOutputTask(results[i].result, { file: results[i].file, fail: config.failIfVulnerabilitiesFound }));
-            }
-
-            printAuditOutput(outputTasks, config, done);
-        });
-    }
-
-    function printAuditOutput(outputTasks, config, done) {
-        log('');
-        async.series(outputTasks, function (err, results) {
-            if (err) {
-                warn(err);
-                return;
-            }
-
-            done();
-        });
-    }
-
-    function makeConfig(config) {
+    /*
+    // Takes the grunt config, if any, and normalizes it into a config model with defaults being set.
+    // @param config (Object): the raw config for nsp-package from grunt
+    // @returns (Object): normalized config model with defaults being set
+    */
+    makeConfig = function (config) {
         var failOptIsBoolean;
 
         config = config || {};
@@ -107,174 +48,158 @@ module.exports = function (grunt) {
         }
 
         return config;
-    }
+    };
 
-    function makeAuditTask (file) {
+    /*
+    // Makes an async task for auditing a single package.json file
+    // @param file (String): the file-path for the package.json that is being audited
+    // @returns (Function): the async task
+    */
+    makeAuditTask = function (file) {
         return function (callback) {
             log(file);
-
-            fs.exists(file, function (exists) {
-                if (!exists) {
-                    callback('Can\'t load ' + file);
-                }
-                pkg = JSON.parse(fs.readFileSync(file));
-                npmconf.load(function (err, config) {
-                    if (err) callback(err);
-
-                    config.log = {
-                        verbose: function () {},
-                        info: function () {},
-                        http: function () {},
-                        silly: function () {},
-                        error: function () {},
-                        warn: function () {},
-                    };
-                    registry = new RegClient(config);
-                    checkPackage(pkg, undefined, function (result) {
-                        callback(null, { file: file, result: result});
-                    });
-                });
+            auditPackage(file, function (err, result) {
+                callback(err, { file: file, result: result });
             });
         };
-    }
+    };
 
-    function makeOutputTask(result, options) {
+    /*
+    // Makes an async task for printing the result for a single audit
+    // @param result (Array): The results from the audit
+    // @param options (Object): options for printing, which should include at a minimum, the name of the file
+    // @returns (Function): the async task
+    */
+    makeOutputTask = function (result, options) {
         return function (callback) {
             prettyOutput(result, options, callback);
         };
-    }
+    };
 
-    function resolveParents(module, current) {
-        current = current || [];
-        var parent = parents[module] && parents[module].length ? parents[module][0] : undefined;
-        if (parent && parent !== pkg.name && current.indexOf(parent) === -1) {
-            current.unshift(parent);
-            return resolveParents(parent, current);
+    /*
+    // Orchestrates the auditing
+    // @param config (Object): The grunt config, already having been processed to set defaults
+    // @param done (Function): The grunt async done callback
+    */
+    audit = function (config, done) {
+        var tasks = [];
+        var outputTasks = [];
+        var i;
+
+        for (i = 0; i < config.files.length; i += 1) {
+            tasks.push(makeAuditTask(config.files[i]));
         }
-        return current;
-    }
+        log('Checking package(s) for known vulnerabilities:');
 
-    function checkPackage(pkginfo, results, callback) {
-        results = results || [];
+        async.parallel(tasks, function (err, results) {
+            var i;
 
-        if (pkginfo.dependencies) {
-            async.forEach(Object.keys(pkginfo.dependencies), function (module, cb) {
-
-                parents[module] = parents[module] || [];
-                if (parents[module].indexOf(pkginfo.name) === -1) {
-                    parents[module].push(pkginfo.name);
-                }
-
-                registry.get(module, pkginfo.dependencies[module], function (er, data, raw, res) {
-                    if (data && data.versions) {
-                        var ver = semver.maxSatisfying(Object.keys(data.versions), pkginfo.dependencies[module]);
-                        validateModule(module, ver, function (result) {
-                            if (result) {
-                                var d = {
-                                    dependencyOf: resolveParents(module),
-                                    module: module,
-                                    version: ver,
-                                    advisory: result[0]
-                                };
-                                results.push(d);
-                            }
-                            if (data && data.versions && data.versions[ver] && data.versions[ver].dependencies) {
-                                checkPackage(data.versions[ver], results, function () {
-                                    cb();
-                                });
-                            } else {
-                                cb();
-                            }
-                        });
-                    } else {
-                        cb();
-                    }
-                });
-            }, function (err) {
-                callback(results);
-            });
-        }
-    }
-
-    function validateModule(module, version, cb) {
-        var url = 'https://nodesecurity.io/validate/' + module + '/' + version;
-        request({
-            url: url,
-            method: 'GET',
-            headers: {
-                'content-type': 'application/json'
-            },
-            json: true
-        }, function (err, response, body) {
-            if (body && body.length > 0) {
-                return cb(body);
+            if (err) {
+                warn(err);
+                return;
             }
-            cb();
-        });
-    }
 
-    function addResultRow(h, module) {
-        h.push([
-            module.module,
-            module.version,
-            module.advisory.patched_versions,
-            module.dependencyOf.join(' > '),
-            module.advisory.short_url || 'See website'
-        ]);
-    }
-
-    function prettyOutputResults(result, h, callback) {
-        var totalResults = result.length + 1;
-        result.forEach(function (module) {
-            if (!module.advisory.short_url) {
-                googl.shorten('https://nodesecurity.io/advisories/' + module.advisory.url)
-                    .then(function (shortUrl) {
-                        module.advisory.short_url = shortUrl;
-                        addResultRow(h, module);
-                        if (h.length >= totalResults) callback();
-                    })
-                    .catch(function (error) {
-                        addResultRow(h, module);
-                        if (h.length >= totalResults) callback();
-                    });
-            } else {
-                addResultRow(h, module);
-                if (h.length >= totalResults) callback();
+            for (i = 0; i < results.length; i += 1) {
+                outputTasks.push(makeOutputTask(results[i].result, results[i].file));
             }
-        });
-    }
 
-    function prettyOutput(result, options, done) {
-        options = options || {};
+            printAuditOutput(outputTasks, config, done);
+        });
+    };
+
+    /*
+    // Orchestrates printing of the output of all audit results to the console
+    // @param outputTasks (Array): the tasks that will print to the console
+    // @param config (Object): The grunt config, already having been processed to set defaults
+    // @param done (Function): The grunt async done callback
+    */
+    printAuditOutput = function (outputTasks, config, done) {
+        log('');
+        async.series(outputTasks, function (err, results) {
+            if (err) {
+                warn(err);
+                return;
+            }
+
+            done();
+        });
+    };
+
+    /*
+    // Prints the results to the console
+    // @param result (Array): The vulnerability results, if any
+    // @param file (String): The filePath these results are for
+    // @param callback (Function): the async callback to signal completion
+    */
+    prettyOutput = function (result, file, callback) {
+        var opts, headings;
 
         if (result && result.length > 0) {
             // Pretty output
-            var opts = {
-                align: [ 'l', 'c', 'c', 'l', 'l' ],
-                stringLength: function (s) { return ansiTrim(s).length; }
+            opts = {
+                align: ['l', 'c', 'c', 'l'],
+                stringLength: function(s) {
+                    return chalk.stripColor(s).length;
+                }
             };
-
-            var h = [
+            headings = [
                 [
-                    color.underline('Name'),
-                    color.underline('Installed'),
-                    color.underline('Patched'),
-                    color.underline('Vulnerable Dependency'),
-                    color.underline('Advisory URL')
+                    chalk.underline('Name'),
+                    chalk.underline('Installed'),
+                    chalk.underline('Patched'),
+                    chalk.underline('Vulnerable Dependency')
                 ]
             ];
-            prettyOutputResults(result, h, function () {
-                var t = table(h, opts);
-                log(color.blue('results for: ' + options.file));
-                log(color.white(t));
-                warn('known vulnerable modules found');
-                log('');
 
-                done();
+            result.forEach(function(module) {
+                headings.push([
+                    module.module,
+                    module.version,                   /* jscs:disable */
+                    module.advisory.patched_versions,
+                    module.dependencyOf.join(' > ')   /* jscs:enable */
+                ]);
             });
+            log(chalk.blue('results for: ' + file));
+            log(table(headings, opts));
+            warn('known vulnerable modules found');
+            log('');
+            callback();
         } else {
-            log(color.green("No vulnerable modules found"));
-            done();
+            log(chalk.green('No vulnerable modules found for: ' + file));
+            log('');
+            callback();
         }
-    }
+    };
+
+    /*
+    // The main grunt task
+    */
+    grunt.registerTask('nsp-audit', 'Audits package.json against nodesecurity.io API', function () {
+        var done = this.async(),
+            config = makeConfig(grunt.config.get('nsp-package')),
+            file = grunt.option('nsp-file');
+
+        if (file) {
+            config.files = [file];
+        }
+
+        log = function (message) {
+            grunt.log.writeln(message);
+        };
+
+        warn = function (message) {
+            if (config.failIfVulnerabilitiesFound) {
+                grunt.fail.warn(message);
+            } else {
+                log(chalk.red(message));
+            }
+        };
+
+        audit(config, done);
+    });
+
+    /*
+    // Backwards compatibility
+    */
+    grunt.registerTask('validate-package', ['nsp-audit']);
 };
