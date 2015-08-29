@@ -176,7 +176,7 @@ module.exports = function (grunt) {
     */
     grunt.registerTask('nsp-audit', 'Audits package.json against nodesecurity.io API', function () {
         var done = this.async(),
-            config = makeConfig(grunt.config.get('nsp-package')),
+            config = makeConfig(grunt.config.get('nsp-audit')),
             file = grunt.option('nsp-file');
 
         if (file) {
