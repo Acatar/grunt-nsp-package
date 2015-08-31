@@ -6,13 +6,7 @@ var grunt = require('grunt'),
     table = require('text-table');
 
 module.exports = function (grunt) {
-    var makeConfig,
-        makeAuditTask,
-        makeOutputTask,
-        audit,
-        printAuditOutput,
-        prettyOutput,
-        log,
+    var log,
         warn;
 
     /*
@@ -20,7 +14,7 @@ module.exports = function (grunt) {
     // @param config (Object): the raw config for nsp-package from grunt
     // @returns (Object): normalized config model with defaults being set
     */
-    makeConfig = function (config) {
+    function makeConfig (config) {
         var failOptIsBoolean;
 
         config = config || {};
@@ -48,21 +42,21 @@ module.exports = function (grunt) {
         }
 
         return config;
-    };
+    }
 
     /*
     // Makes an async task for auditing a single package.json file
     // @param file (String): the file-path for the package.json that is being audited
     // @returns (Function): the async task
     */
-    makeAuditTask = function (file) {
+    function makeAuditTask (file) {
         return function (callback) {
             log(file);
             auditPackage(file, function (err, result) {
                 callback(err, { file: file, result: result });
             });
         };
-    };
+    }
 
     /*
     // Makes an async task for printing the result for a single audit
@@ -70,18 +64,18 @@ module.exports = function (grunt) {
     // @param options (Object): options for printing, which should include at a minimum, the name of the file
     // @returns (Function): the async task
     */
-    makeOutputTask = function (result, options) {
+    function makeOutputTask (result, options) {
         return function (callback) {
             prettyOutput(result, options, callback);
         };
-    };
+    }
 
     /*
     // Orchestrates the auditing
     // @param config (Object): The grunt config, already having been processed to set defaults
     // @param done (Function): The grunt async done callback
     */
-    audit = function (config, done) {
+    function audit (config, done) {
         var tasks = [];
         var outputTasks = [];
         var i;
@@ -105,7 +99,7 @@ module.exports = function (grunt) {
 
             printAuditOutput(outputTasks, config, done);
         });
-    };
+    }
 
     /*
     // Orchestrates printing of the output of all audit results to the console
@@ -113,7 +107,7 @@ module.exports = function (grunt) {
     // @param config (Object): The grunt config, already having been processed to set defaults
     // @param done (Function): The grunt async done callback
     */
-    printAuditOutput = function (outputTasks, config, done) {
+    function printAuditOutput (outputTasks, config, done) {
         log('');
         async.series(outputTasks, function (err, results) {
             if (err) {
@@ -123,7 +117,7 @@ module.exports = function (grunt) {
 
             done();
         });
-    };
+    }
 
     /*
     // Prints the results to the console
@@ -131,7 +125,7 @@ module.exports = function (grunt) {
     // @param file (String): The filePath these results are for
     // @param callback (Function): the async callback to signal completion
     */
-    prettyOutput = function (result, file, callback) {
+    function prettyOutput (result, file, callback) {
         var opts, headings;
 
         if (result && result.length > 0) {
@@ -169,7 +163,7 @@ module.exports = function (grunt) {
             log('');
             callback();
         }
-    };
+    }
 
     /*
     // The main grunt task
