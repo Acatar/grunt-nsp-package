@@ -64,7 +64,7 @@ module.exports = function (grunt) {
 
     grunt.loadNpmTasks('grunt-nsp-package');
 
-    grunt.config.set('nsp-package', {
+    grunt.config.set('nsp-audit', {
         files: ['../some/other/app/package.json', '../and/another/app/package.json'],
         failBehavior: 'log'
     });

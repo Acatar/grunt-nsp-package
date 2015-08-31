@@ -14,7 +14,7 @@ module.exports = function (grunt) {
     // @param config (Object): the raw config for nsp-package from grunt
     // @returns (Object): normalized config model with defaults being set
     */
-    function makeConfig (config) {
+    function makeConfig(config) {
         var failOptIsBoolean;
 
         config = config || {};
@@ -49,7 +49,7 @@ module.exports = function (grunt) {
     // @param file (String): the file-path for the package.json that is being audited
     // @returns (Function): the async task
     */
-    function makeAuditTask (file) {
+    function makeAuditTask(file) {
         return function (callback) {
             log(file);
             auditPackage(file, function (err, result) {
@@ -64,7 +64,7 @@ module.exports = function (grunt) {
     // @param options (Object): options for printing, which should include at a minimum, the name of the file
     // @returns (Function): the async task
     */
-    function makeOutputTask (result, options) {
+    function makeOutputTask(result, options) {
         return function (callback) {
             prettyOutput(result, options, callback);
         };
@@ -75,7 +75,7 @@ module.exports = function (grunt) {
     // @param config (Object): The grunt config, already having been processed to set defaults
     // @param done (Function): The grunt async done callback
     */
-    function audit (config, done) {
+    function audit(config, done) {
         var tasks = [];
         var outputTasks = [];
         var i;
@@ -107,7 +107,7 @@ module.exports = function (grunt) {
     // @param config (Object): The grunt config, already having been processed to set defaults
     // @param done (Function): The grunt async done callback
     */
-    function printAuditOutput (outputTasks, config, done) {
+    function printAuditOutput(outputTasks, config, done) {
         log('');
         async.series(outputTasks, function (err, results) {
             if (err) {
@@ -125,7 +125,7 @@ module.exports = function (grunt) {
     // @param file (String): The filePath these results are for
     // @param callback (Function): the async callback to signal completion
     */
-    function prettyOutput (result, file, callback) {
+    function prettyOutput(result, file, callback) {
         var opts, headings;
 
         if (result && result.length > 0) {
